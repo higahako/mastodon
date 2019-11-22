@@ -10,7 +10,6 @@ Warden::Manager.after_set_user except: :fetch do |user, warden|
     expires: 1.year.from_now,
     httponly: true,
     secure: (Rails.env.production? || ENV['LOCAL_HTTPS'] == 'true'),
-    same_site: :lax,
   }
 end
 
@@ -21,7 +20,6 @@ Warden::Manager.after_fetch do |user, warden|
       expires: 1.year.from_now,
       httponly: true,
       secure: (Rails.env.production? || ENV['LOCAL_HTTPS'] == 'true'),
-      same_site: :lax,
     }
   else
     warden.logout
@@ -73,8 +71,8 @@ end
 
 Devise.setup do |config|
   config.warden do |manager|
-    manager.default_strategies(scope: :user).unshift :ldap_authenticatable if Devise.ldap_authentication
-    manager.default_strategies(scope: :user).unshift :pam_authenticatable  if Devise.pam_authentication
+    manager.default_strategies(scope: :user).unshift :two_factor_ldap_authenticatable if Devise.ldap_authentication
+    manager.default_strategies(scope: :user).unshift :two_factor_pam_authenticatable  if Devise.pam_authentication
     manager.default_strategies(scope: :user).unshift :two_factor_authenticatable
     manager.default_strategies(scope: :user).unshift :two_factor_backupable
   end

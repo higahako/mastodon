@@ -6,11 +6,12 @@ class Auth::SessionsController < Devise::SessionsController
   layout 'auth'
 
   skip_before_action :require_no_authentication, only: [:create]
-  skip_before_action :check_user_permissions, only: [:destroy]
+  skip_before_action :require_functional!
+
   prepend_before_action :authenticate_with_two_factor, if: :two_factor_enabled?, only: [:create]
+
   before_action :set_instance_presenter, only: [:new]
   before_action :set_body_classes
-  after_action :clear_site_data, only: [:destroy]
 
   def new
     Devise.omniauth_configs.each do |provider, config|
@@ -30,6 +31,7 @@ class Auth::SessionsController < Devise::SessionsController
   def destroy
     tmp_stored_location = stored_location_for(:user)
     super
+    session.delete(:challenge_passed_at)
     flash.delete(:notice)
     store_location_for(:user, tmp_stored_location) if continue_after?
   end
@@ -39,12 +41,10 @@ class Auth::SessionsController < Devise::SessionsController
   def find_user
     if session[:otp_user_id]
       User.find(session[:otp_user_id])
-    elsif user_params[:email]
-      if use_seamless_external_login? && Devise.check_at_sign && user_params[:email].index('@').nil?
-        User.joins(:account).find_by(accounts: { username: user_params[:email] })
-      else
-        User.find_for_authentication(email: user_params[:email])
-      end
+    else
+      user   = User.authenticate_with_ldap(user_params) if Devise.ldap_authentication
+      user ||= User.authenticate_with_pam(user_params) if Devise.pam_authentication
+      user ||= User.find_for_authentication(email: user_params[:email])
     end
   end
 
@@ -71,13 +71,13 @@ class Auth::SessionsController < Devise::SessionsController
   end
 
   def two_factor_enabled?
-    find_user.try(:otp_required_for_login?)
+    find_user&.otp_required_for_login?
   end
 
   def valid_otp_attempt?(user)
     user.validate_and_consume_otp!(user_params[:otp_attempt]) ||
       user.invalidate_otp_backup_code!(user_params[:otp_attempt])
-  rescue OpenSSL::Cipher::CipherError => _error
+  rescue OpenSSL::Cipher::CipherError
     false
   end
 
@@ -86,7 +86,10 @@ class Auth::SessionsController < Devise::SessionsController
 
     if user_params[:otp_attempt].present? && session[:otp_user_id]
       authenticate_with_two_factor_via_otp(user)
-    elsif user&.valid_password?(user_params[:password])
+    elsif user.present? && (user.encrypted_password.blank? || user.valid_password?(user_params[:password]))
+      # If encrypted_password is blank, we got the user from LDAP or PAM,
+      # so credentials are already valid
+
       prompt_for_two_factor(user)
     end
   end
@@ -104,6 +107,7 @@ class Auth::SessionsController < Devise::SessionsController
 
   def prompt_for_two_factor(user)
     session[:otp_user_id] = user.id
+    @body_classes = 'lighter'
     render :two_factor
   end
 
@@ -123,14 +127,6 @@ class Auth::SessionsController < Devise::SessionsController
       paths << short_account_path(username: resource.account)
     end
     paths
-  end
-
-  def clear_site_data
-    return if continue_after?
-
-    # Should be '"*"' but that doesn't work in Chrome (neither does '"executionContexts"')
-    # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Clear-Site-Data
-    response.headers['Clear-Site-Data'] = '"cache", "cookies", "storage"'
   end
 
   def continue_after?

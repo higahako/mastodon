@@ -12,7 +12,7 @@ require 'capybara/rspec'
 Dir[Rails.root.join('spec/support/**/*.rb')].each { |f| require f }
 
 ActiveRecord::Migration.maintain_test_schema!
-WebMock.disable_net_connect!
+WebMock.disable_net_connect!(allow: Chewy.settings[:host])
 Redis.current = Redis::Namespace.new("mastodon_test#{ENV['TEST_ENV_NUMBER']}", redis: Redis.current)
 Sidekiq::Testing.inline!
 Sidekiq::Logging.logger = nil
@@ -29,7 +29,6 @@ Devise::Test::ControllerHelpers.module_eval do
       value: resource.activate_session(warden.request),
       expires: 1.year.from_now,
       httponly: true,
-      same_site: :lax,
     }
   end
 end
@@ -72,11 +71,11 @@ RSpec::Sidekiq.configure do |config|
 end
 
 def request_fixture(name)
-  File.read(File.join(Rails.root, 'spec', 'fixtures', 'requests', name))
+  File.read(Rails.root.join('spec', 'fixtures', 'requests', name))
 end
 
 def attachment_fixture(name)
-  File.open(File.join(Rails.root, 'spec', 'fixtures', 'files', name))
+  File.open(Rails.root.join('spec', 'fixtures', 'files', name))
 end
 
 def stub_jsonld_contexts!

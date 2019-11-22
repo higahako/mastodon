@@ -1,6 +1,10 @@
 ---
 cy:
   activerecord:
+    attributes:
+      poll:
+        expires_at: Terfyn amser
+        options: Dewisiadau
     errors:
       models:
         account:
@@ -10,4 +14,4 @@ cy:
         status:
           attributes:
             reblog:
-              taken: o'r statws sy'n bodoli'n barod
+              taken: o'r statws yn bodoli'n barod
